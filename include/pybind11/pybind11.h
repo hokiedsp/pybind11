@@ -451,33 +451,27 @@ protected:
         int index = 0;
         /* Create a nice pydoc rec including all signatures and
            docstrings of the functions in the overload chain */
-        if (chain && options::show_function_signatures()) {
+        if (options::show_function_signatures()) {
             // First a generic signature
-            signatures += rec->name;
-            signatures += "(*args, **kwargs)\n";
-            signatures += "Overloaded function.\n\n";
+	        for (auto it = chain_start; it != nullptr; it = it->next) {
+		        if (it != chain_start) signatures += " \\\n";
+		        signatures += rec->name;
+		        signatures += it->signature;
+	        }
+	        signatures += "\n";
         }
         // Then specific overload signatures
         bool first_user_def = true;
         for (auto it = chain_start; it != nullptr; it = it->next) {
-            if (options::show_function_signatures()) {
-                if (index > 0) signatures += "\n";
-                if (chain)
-                    signatures += std::to_string(++index) + ". ";
-                signatures += rec->name;
-                signatures += it->signature;
-                signatures += "\n";
-            }
             if (it->doc && strlen(it->doc) > 0 && options::show_user_defined_docstrings()) {
                 // If we're appending another docstring, and aren't printing function signatures, we
                 // need to append a newline first:
-                if (!options::show_function_signatures()) {
-                    if (first_user_def) first_user_def = false;
-                    else signatures += "\n";
-                }
-                if (options::show_function_signatures()) signatures += "\n";
+                if (first_user_def)
+                    first_user_def = false;
+                else
+                    signatures += "\n";
+                signatures += "\n";
                 signatures += it->doc;
-                if (options::show_function_signatures()) signatures += "\n";
             }
         }
 
@@ -1644,23 +1638,23 @@ struct enum_base {
             }, name("name"), is_method(m_base)
         );
 
-        m_base.attr("__doc__") = static_property(cpp_function(
-            [](handle arg) -> std::string {
-                std::string docstring;
-                dict entries = arg.attr("__entries");
-                if (((PyTypeObject *) arg.ptr())->tp_doc)
-                    docstring += std::string(((PyTypeObject *) arg.ptr())->tp_doc) + "\n\n";
-                docstring += "Members:";
-                for (auto kv : entries) {
-                    auto key = std::string(pybind11::str(kv.first));
-                    auto comment = kv.second[int_(1)];
-                    docstring += "\n\n  " + key;
-                    if (!comment.is_none())
-                        docstring += " : " + (std::string) pybind11::str(comment);
-                }
-                return docstring;
-            }, name("__doc__")
-        ), none(), none(), "");
+//        m_base.attr("__doc__") = static_property(cpp_function(
+//            [](handle arg) -> std::string {
+//                std::string docstring;
+//                dict entries = arg.attr("__entries");
+//                if (((PyTypeObject *) arg.ptr())->tp_doc)
+//                    docstring += std::string(((PyTypeObject *) arg.ptr())->tp_doc) + "\n\n";
+//                docstring += "Members:";
+//                for (auto kv : entries) {
+//                    auto key = std::string(pybind11::str(kv.first));
+//                    auto comment = kv.second[int_(1)];
+//                    docstring += "\n\n  " + key;
+//                    if (!comment.is_none())
+//                        docstring += " : " + (std::string) pybind11::str(comment);
+//                }
+//                return docstring;
+//            }, name("__doc__")
+//        ), none(), none(), "");
 
         m_base.attr("__members__") = static_property(cpp_function(
             [](handle arg) -> dict {
@@ -2288,6 +2282,30 @@ inline function get_type_override(const void *this_ptr, const type_info *this_ty
     /* Don't call dispatch code if invoked from overridden function.
        Unfortunately this doesn't work on PyPy. */
 #if !defined(PYPY_VERSION)
+
+#    if PY_VERSION_HEX >= 0x03090000
+    PyFrameObject *frame = PyThreadState_GetFrame(PyThreadState_Get());
+    if (frame != nullptr) {
+        PyCodeObject *f_code = PyFrame_GetCode(frame);
+        // f_code is guaranteed to not be NULL
+        if ((std::string) str(f_code->co_name) == name && f_code->co_argcount > 0) {
+            PyObject *locals = PyEval_GetLocals();
+            if (locals != nullptr) {
+                PyObject *co_varnames = PyObject_GetAttrString((PyObject *) f_code, "co_varnames");
+                PyObject *self_arg = PyTuple_GET_ITEM(co_varnames, 0);
+                Py_DECREF(co_varnames);
+                PyObject *self_caller = PyDict_GetItem(locals, self_arg);
+                if (self_caller == self.ptr()) {
+                    Py_DECREF(f_code);
+                    Py_DECREF(frame);
+                    return function();
+                }
+            }
+        }
+        Py_DECREF(f_code);
+        Py_DECREF(frame);
+    }
+#    else
     PyFrameObject *frame = PyThreadState_Get()->frame;
     if (frame && (std::string) str(frame->f_code->co_name) == name &&
         frame->f_code->co_argcount > 0) {
@@ -2297,6 +2315,8 @@ inline function get_type_override(const void *this_ptr, const type_info *this_ty
         if (self_caller == self.ptr())
             return function();
     }
+#    endif
+
 #else
     /* PyPy currently doesn't provide a detailed cpyext emulation of
        frame objects, so we have to emulate this using Python. This
