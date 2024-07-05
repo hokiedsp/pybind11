@@ -1447,6 +1447,15 @@ struct npy_format_descriptor<std::array<char, N>> {
 };
 #undef PYBIND11_DECL_CHAR_FMT
 
+// <added by Yannick Jadoul for Parselmouth>
+template<> struct npy_format_descriptor<pybind11::object> {
+public:
+	static constexpr auto name = _("O"); \
+    static pybind11::dtype dtype() { return pybind11::dtype(std::string("O")); }
+};
+// </added by Yannick Jadoul for Parselmouth>
+
+
 template <typename T>
 struct npy_format_descriptor<T, enable_if_t<array_info<T>::is_array>> {
 private:

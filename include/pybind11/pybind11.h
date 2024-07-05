@@ -610,11 +610,14 @@ protected:
         int index = 0;
         /* Create a nice pydoc rec including all signatures and
            docstrings of the functions in the overload chain */
-        if (chain && options::show_function_signatures()) {
+        if (options::show_function_signatures()) {
             // First a generic signature
-            signatures += rec->name;
-            signatures += "(*args, **kwargs)\n";
-            signatures += "Overloaded function.\n\n";
+	        for (auto it = chain_start; it != nullptr; it = it->next) {
+		        if (it != chain_start) signatures += " \\\n";
+		        signatures += rec->name;
+		        signatures += it->signature;
+	        }
+	        signatures += "\n";
         }
         // Then specific overload signatures
         bool first_user_def = true;
@@ -2074,35 +2077,37 @@ struct enum_base {
             name("__str__"),
             is_method(m_base));
 
-        if (options::show_enum_members_docstring()) {
-            m_base.attr("__doc__") = static_property(
-                cpp_function(
-                    [](handle arg) -> std::string {
-                        std::string docstring;
-                        dict entries = arg.attr("__entries");
-                        if (((PyTypeObject *) arg.ptr())->tp_doc) {
-                            docstring += std::string(
-                                reinterpret_cast<PyTypeObject *>(arg.ptr())->tp_doc);
-                            docstring += "\n\n";
-                        }
-                        docstring += "Members:";
-                        for (auto kv : entries) {
-                            auto key = std::string(pybind11::str(kv.first));
-                            auto comment = kv.second[int_(1)];
-                            docstring += "\n\n  ";
-                            docstring += key;
-                            if (!comment.is_none()) {
-                                docstring += " : ";
-                                docstring += pybind11::str(comment).cast<std::string>();
-                            }
-                        }
-                        return docstring;
-                    },
-                    name("__doc__")),
-                none(),
-                none(),
-                "");
-        }
+        // <commented out by Yannick Jadoul for Parselmouth>
+        // if (options::show_enum_members_docstring()) {
+        //     m_base.attr("__doc__") = static_property(
+        //         cpp_function(
+        //             [](handle arg) -> std::string {
+        //                 std::string docstring;
+        //                 dict entries = arg.attr("__entries");
+        //                 if (((PyTypeObject *) arg.ptr())->tp_doc) {
+        //                     docstring += std::string(
+        //                         reinterpret_cast<PyTypeObject *>(arg.ptr())->tp_doc);
+        //                     docstring += "\n\n";
+        //                 }
+        //                 docstring += "Members:";
+        //                 for (auto kv : entries) {
+        //                     auto key = std::string(pybind11::str(kv.first));
+        //                     auto comment = kv.second[int_(1)];
+        //                     docstring += "\n\n  ";
+        //                     docstring += key;
+        //                     if (!comment.is_none()) {
+        //                         docstring += " : ";
+        //                         docstring += pybind11::str(comment).cast<std::string>();
+        //                     }
+        //                 }
+        //                 return docstring;
+        //             },
+        //             name("__doc__")),
+        //         none(),
+        //         none(),
+        //         "");
+        // }
+        // </commented out by Yannick Jadoul for Parselmouth>
 
         m_base.attr("__members__") = static_property(cpp_function(
                                                          [](handle arg) -> dict {
